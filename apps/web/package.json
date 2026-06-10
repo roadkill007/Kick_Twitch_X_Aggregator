@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "next build",
+    "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'tests added in web tasks'",
+    "test": "vitest run",
     "lint": "next lint || true"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2"
+    "@types/react-dom": "^19.0.2",
+    "vitest": "^2.1.8"
   }
 }
