@@ -5,5 +5,5 @@
     "rootDir": "../..",
     "types": ["node", "vitest"]
   },
-  "include": ["src/**/*.ts", "../../packages/db/src/**/*.ts"]
+  "include": ["src/**/*.ts", "../../packages/db/src/**/*.ts", "../../packages/providers/src/**/*.ts", "../../packages/pipeline/src/**/*.ts", "../../packages/shared/src/**/*.ts"]
 }

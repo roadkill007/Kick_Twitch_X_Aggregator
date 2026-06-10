@@ -5,8 +5,10 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { createClient } from 'redis';
 import { z } from 'zod';
 import { migrate } from '../../../packages/db/src/index.js';
+import { buildTwitchAuthorizationUrl, exchangeTwitchCode, getTwitchUser, resolveKickChannel } from '../../../packages/providers/src/index.js';
 import { writeAuditLog } from './audit.js';
 import { requireSessionAccess, requireSessionManager } from './permissions.js';
+import { LiveProviderRuntimeController } from './provider-runtime.js';
 import { createOpaqueToken, hashPassword, hashToken, signJwt, verifyJwt, verifyPassword } from './security.js';
 import type { AppContext, AuthenticatedUser } from './types.js';
 
@@ -45,6 +47,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   await migrate(context.pool);
 
   const app = Fastify({ logger: false, genReqId: () => crypto.randomUUID() });
+  const providerRuntime = context.providerRuntime ?? new LiveProviderRuntimeController();
   await app.register(cors, { origin: true });
   await app.register(websocket);
 
@@ -282,6 +285,177 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     return { collaborators: result.rows };
   });
 
+  app.get('/api/v1/connections/twitch/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    if (!context.twitch) return reply.code(503).send({ error: 'Twitch is not configured' });
+    const user = currentUser(request);
+    const state = createOpaqueToken();
+    await context.pool.query(
+      `INSERT INTO settings(user_id, key, value, version) VALUES ($1, $2, $3::jsonb, 1)
+       ON CONFLICT (user_id, key) WHERE user_id IS NOT NULL
+       DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [user.id, `oauth:twitch:${state}`, JSON.stringify({ state, userId: user.id, createdAt: new Date().toISOString() })],
+    );
+    const authorizationUrl = buildTwitchAuthorizationUrl(context.twitch, state);
+    return { authorizationUrl, redirectUri: context.twitch.redirectUri };
+  });
+
+  app.get('/api/v1/connections/twitch/callback', async (request, reply) => {
+    if (!context.twitch) return reply.code(503).send({ error: 'Twitch is not configured' });
+    const query = z.object({ code: z.string().min(1), state: z.string().min(1) }).parse(request.query);
+    const stateResult = await context.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM settings WHERE key = $1 AND user_id IS NOT NULL`,
+      [`oauth:twitch:${query.state}`],
+    );
+    const stateRow = stateResult.rows[0];
+    if (!stateRow) return reply.code(400).send({ error: 'Invalid OAuth state' });
+
+    const token = await exchangeTwitchCode(context.twitch, query.code);
+    const twitchUser = await getTwitchUser(context.twitch.clientId, token.accessToken);
+    await context.pool.query(
+      `INSERT INTO connections(user_id, platform, external_account_id, external_username, status, metadata)
+       VALUES ($1, 'twitch', $2, $3, 'connected', $4::jsonb)
+       ON CONFLICT (user_id, platform)
+       DO UPDATE SET external_account_id = EXCLUDED.external_account_id,
+                     external_username = EXCLUDED.external_username,
+                     status = 'connected',
+                     metadata = EXCLUDED.metadata,
+                     updated_at = now()`,
+      [
+        stateRow.user_id,
+        twitchUser.id,
+        twitchUser.login,
+        JSON.stringify({
+          displayName: twitchUser.displayName,
+          accessToken: token.accessToken,
+          refreshToken: token.refreshToken,
+          expiresAt: new Date(Date.now() + token.expiresIn * 1000).toISOString(),
+          scope: token.scope,
+          tokenType: token.tokenType,
+        }),
+      ],
+    );
+    await context.pool.query('DELETE FROM settings WHERE key = $1', [`oauth:twitch:${query.state}`]);
+    await writeAuditLog({ pool: context.pool, actorUserId: stateRow.user_id, action: 'connection.twitch.connected', entityType: 'connection', requestId: request.id, metadata: { twitchUserId: twitchUser.id, twitchLogin: twitchUser.login } });
+    reply.type('text/html');
+    return '<!doctype html><title>Twitch connected</title><h1>Twitch connected</h1><p>You can close this tab and return to the app.</p>';
+  });
+
+  app.get('/api/v1/connections', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request) => {
+    const user = currentUser(request);
+    const result = await context.pool.query(
+      `SELECT platform, external_account_id, external_username, status, created_at, updated_at
+       FROM connections WHERE user_id = $1 ORDER BY platform`,
+      [user.id],
+    );
+    return { connections: result.rows };
+  });
+
+  app.post('/api/v1/connections/kick/resolve', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const body = z.object({ username: z.string().min(1) }).parse(request.body);
+    try {
+      const channel = await resolveKickChannel(body.username);
+      await context.pool.query(
+        `INSERT INTO connections(user_id, platform, external_account_id, external_username, status, metadata)
+         VALUES ($1, 'kick', $2, $3, 'connected', $4::jsonb)
+         ON CONFLICT (user_id, platform)
+         DO UPDATE SET external_account_id = EXCLUDED.external_account_id,
+                       external_username = EXCLUDED.external_username,
+                       status = 'connected',
+                       metadata = EXCLUDED.metadata,
+                       updated_at = now()`,
+        [user.id, String(channel.chatroomId), channel.slug, JSON.stringify({ chatroomId: channel.chatroomId, slug: channel.slug })],
+      );
+      await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'connection.kick.resolved', entityType: 'connection', requestId: request.id, metadata: { username: body.username, chatroomId: channel.chatroomId } });
+      return { connection: { platform: 'kick', externalAccountId: String(channel.chatroomId), externalUsername: channel.slug, status: 'connected' } };
+    } catch (error) {
+      return reply.code(502).send({ error: error instanceof Error ? error.message : 'Kick resolve failed' });
+    }
+  });
+
+  const providerSessionParams = z.object({ sessionId: z.string().uuid() });
+
+  async function creatorLabelFor(sessionId: string, userId: string): Promise<string> {
+    const result = await context.pool.query<{ display_label: string }>(
+      `SELECT display_label FROM collaborators
+       WHERE shared_session_id = $1 AND user_id = $2 AND status = 'active'
+       ORDER BY created_at ASC LIMIT 1`,
+      [sessionId, userId],
+    );
+    return result.rows[0]?.display_label ?? 'Creator';
+  }
+
+  app.get('/api/v1/shared-sessions/:sessionId/providers', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const params = providerSessionParams.parse(request.params);
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    return { providers: providerRuntime.status(params.sessionId) };
+  });
+
+  app.post('/api/v1/shared-sessions/:sessionId/providers/kick/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const params = providerSessionParams.parse(request.params);
+    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+
+    const connection = await context.pool.query<{ external_account_id: string | null; external_username: string | null; metadata: Record<string, unknown> }>(
+      `SELECT external_account_id, external_username, metadata FROM connections
+       WHERE user_id = $1 AND platform = 'kick' AND status = 'connected'`,
+      [user.id],
+    );
+    const row = connection.rows[0];
+    if (!row) return reply.code(409).send({ error: 'Kick is not connected for this user' });
+    const chatroomId = Number(row.metadata?.chatroomId ?? row.external_account_id);
+    if (!Number.isFinite(chatroomId)) return reply.code(409).send({ error: 'Kick connection is missing a chatroom id' });
+
+    const provider = await providerRuntime.startKick({
+      sessionId: params.sessionId,
+      ownerId: user.id,
+      ownerName: await creatorLabelFor(params.sessionId, user.id),
+      chatroomId,
+      externalUsername: row.external_username ?? String(chatroomId),
+    });
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'provider.kick.started', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
+    return { provider };
+  });
+
+  app.post('/api/v1/shared-sessions/:sessionId/providers/twitch/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    if (!context.twitch) return reply.code(503).send({ error: 'Twitch is not configured' });
+    const user = currentUser(request);
+    const params = providerSessionParams.parse(request.params);
+    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+
+    const connection = await context.pool.query<{ external_account_id: string | null; external_username: string | null; metadata: Record<string, unknown> }>(
+      `SELECT external_account_id, external_username, metadata FROM connections
+       WHERE user_id = $1 AND platform = 'twitch' AND status = 'connected'`,
+      [user.id],
+    );
+    const row = connection.rows[0];
+    const accessToken = typeof row?.metadata?.accessToken === 'string' ? row.metadata.accessToken : null;
+    if (!row || !row.external_account_id || !accessToken) return reply.code(409).send({ error: 'Twitch is not connected for this user' });
+
+    const provider = await providerRuntime.startTwitch({
+      sessionId: params.sessionId,
+      ownerId: user.id,
+      ownerName: await creatorLabelFor(params.sessionId, user.id),
+      clientId: context.twitch.clientId,
+      accessToken,
+      broadcasterUserId: row.external_account_id,
+      chattingUserId: row.external_account_id,
+      externalUsername: row.external_username ?? row.external_account_id,
+    });
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'provider.twitch.started', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
+    return { provider };
+  });
+
+  app.post('/api/v1/shared-sessions/:sessionId/providers/:platform/stop', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const params = z.object({ sessionId: z.string().uuid(), platform: z.enum(['twitch', 'kick', 'x']) }).parse(request.params);
+    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    const provider = await providerRuntime.stop({ sessionId: params.sessionId, platform: params.platform });
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: `provider.${params.platform}.stopped`, entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
+    return { provider };
+  });
+
   app.get('/api/v1/ws', { websocket: true }, (socket, request) => {
     const url = new URL(request.url, 'http://localhost');
     const token = url.searchParams.get('token');
@@ -303,6 +477,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   });
 
   app.addHook('onClose', async () => {
+    await providerRuntime.shutdown?.();
     await context.pool.end();
   });
 

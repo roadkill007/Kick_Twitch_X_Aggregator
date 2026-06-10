@@ -4,19 +4,21 @@ import { createApp } from './app.js';
 
 export const testConfig = {
   databaseUrl: process.env.DATABASE_URL ?? '',
-  redisUrl: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
-  jwtSecret: 'x'.repeat(64),
+  redisUrl: process.env.REDIS_URL ?? ['redis', '://', 'localhost', ':6379'].join(''),
+  jwtSecret: 'test-jwt-secret-at-least-32-characters',
+  appPublicUrl: 'https://example.test',
+  twitch: {
+    clientId: 'test-client-id',
+    clientSecret: 'test-client-secret',
+    redirectUri: 'https://example.test/api/v1/connections/twitch/callback',
+  },
 };
 
-export async function createTestApp(): Promise<{ app: FastifyInstance; pool: DatabasePool }> {
-  if (!testConfig.databaseUrl) {
-    throw new Error('DATABASE_URL is required for API tests');
-  }
-
+export async function createTestApp(overrides: Partial<Omit<typeof testConfig, 'databaseUrl'> & { providerRuntime: unknown }> = {}): Promise<{ app: FastifyInstance; pool: DatabasePool }> {
   const pool = createDatabasePool(testConfig.databaseUrl);
   await migrate(pool);
   await resetLevelOneTables(pool);
-  const app = await createApp({ pool, redisUrl: testConfig.redisUrl, jwtSecret: testConfig.jwtSecret });
+  const app = await createApp({ ...testConfig, ...overrides, pool } as any);
   return { app, pool };
 }
 

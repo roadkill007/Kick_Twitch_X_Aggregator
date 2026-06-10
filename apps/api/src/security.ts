@@ -1,7 +1,12 @@
 import * as crypto from 'node:crypto';
-import * as bcrypt from 'bcryptjs';
-import * as jwt from 'jsonwebtoken';
+import { createRequire } from 'node:module';
+import type * as Bcrypt from 'bcryptjs';
+import type * as JsonWebToken from 'jsonwebtoken';
 import type { AuthenticatedUser } from './types.js';
+
+const require = createRequire(import.meta.url);
+const bcrypt = require('bcryptjs') as typeof Bcrypt;
+const jwt = require('jsonwebtoken') as typeof JsonWebToken;
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -30,7 +35,7 @@ export function signJwt(input: { userId: string; email: string; jwtSecret: strin
 }
 
 export function verifyJwt(token: string, jwtSecret: string): AuthenticatedUser {
-  const payload = jwt.verify(token, jwtSecret) as jwt.JwtPayload;
+  const payload = jwt.verify(token, jwtSecret) as JsonWebToken.JwtPayload;
   if (!payload.sub || !payload.email || !payload.jti) {
     throw new Error('Invalid token payload');
   }
