@@ -8,6 +8,7 @@ let pool: DatabasePool;
 const runtime = {
   startKick: vi.fn(),
   startTwitch: vi.fn(),
+  startX: vi.fn(),
   stop: vi.fn(),
   status: vi.fn(),
 };
@@ -71,6 +72,39 @@ describe('shared session provider lifecycle routes', () => {
 
     expect(response.statusCode).toBe(403);
     expect(runtime.startKick).not.toHaveBeenCalled();
+  });
+
+  it('starts an X provider from the manager user supplied broadcast link', async () => {
+    runtime.startX.mockResolvedValueOnce({ sessionId: 'session-id', platform: 'x', status: 'running' });
+    const owner = await registerUser(app, 'x-provider-owner');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/shared-sessions',
+      headers: { authorization: `Bearer ${owner.token}` },
+      payload: { name: 'X Session', creatorLabel: 'X Creator Label' },
+    });
+    const sessionId = created.json().sharedSession.id;
+    await pool.query(
+      `INSERT INTO connections(user_id, platform, external_account_id, external_username, status, metadata)
+       VALUES ($1, 'x', '1MJgNNyRmEYGL', '1MJgNNyRmEYGL', 'connected', $2::jsonb)`,
+      [owner.user.id, JSON.stringify({ broadcastId: '1MJgNNyRmEYGL', broadcastUrl: 'https://x.com/i/broadcasts/1MJgNNyRmEYGL' })],
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/shared-sessions/${sessionId}/providers/x/start`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().provider).toMatchObject({ platform: 'x', status: 'running' });
+    expect(runtime.startX).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId,
+      ownerId: owner.user.id,
+      ownerName: 'X Creator Label',
+      broadcastId: '1MJgNNyRmEYGL',
+      broadcastUrl: 'https://x.com/i/broadcasts/1MJgNNyRmEYGL',
+    }));
   });
 
   it('reports provider status for collaborators without exposing connection secrets', async () => {

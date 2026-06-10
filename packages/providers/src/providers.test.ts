@@ -3,7 +3,7 @@ import { ExponentialBackoff } from './backoff.js';
 import { DuplicateSuppressor } from './duplicates.js';
 import { buildTwitchAuthorizationUrl, refreshTwitchToken, TWITCH_CHAT_SCOPES } from './twitch.js';
 import { KickPusherChatProvider, parseKickChannel } from './kick.js';
-import { assertXLivestreamConfigured } from './x.js';
+import { extractXBroadcastId, parseXChatMessage, bootstrapXBroadcast, assertXLivestreamConfigured } from './x.js';
 
 describe('Twitch real integration helpers', () => {
   it('builds the production Twitch OAuth URL with required chat scopes', () => {
@@ -86,5 +86,59 @@ describe('provider resilience primitives', () => {
 describe('X provider gate', () => {
   it('refuses to enable X without a livestream URL', () => {
     expect(() => assertXLivestreamConfigured({ livestreamUrl: 'none' })).toThrow(/X livestream URL/);
+  });
+
+  it('extracts broadcast ids from public X broadcast URLs supplied by users', () => {
+    expect(extractXBroadcastId('https://x.com/i/broadcasts/1MJgNNyRmEYGL')).toBe('1MJgNNyRmEYGL');
+    expect(extractXBroadcastId('1MJgNNyRmEYGL')).toBe('1MJgNNyRmEYGL');
+    expect(() => extractXBroadcastId('https://x.com/not-a-broadcast')).toThrow(/Could not extract/);
+  });
+
+  it('parses real Periscope/X chat message envelopes into provider chat messages', () => {
+    const payload = JSON.stringify({
+      sender: { username: 'viewer_fallback', display_name: 'Viewer Fallback' },
+      body: JSON.stringify({
+        uuid: 'chat-1',
+        username: 'viewer',
+        displayName: 'Viewer',
+        body: 'hello x live',
+        timestamp: 1700000000000,
+      }),
+    });
+
+    expect(parseXChatMessage({ kind: 1, payload }, '1MJgNNyRmEYGL', 'https://x.com/i/broadcasts/1MJgNNyRmEYGL')).toMatchObject({
+      broadcastId: '1MJgNNyRmEYGL',
+      uuid: 'chat-1',
+      username: 'viewer',
+      displayName: 'Viewer',
+      text: 'hello x live',
+      timestampMs: 1700000000000,
+    });
+  });
+
+  it('bootstraps an X broadcast through the public guest-token and chat-token flow', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ guest_token: 'guest-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ broadcasts: { '1MJgNNyRmEYGL': { media_key: 'media-key', status: 'Live test' } } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ chatToken: 'chat-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ endpoint: 'https://chat.pscp.tv', access_token: 'access-token', read_only: true }), { status: 200 }));
+
+    const bootstrap = await bootstrapXBroadcast('https://x.com/i/broadcasts/1MJgNNyRmEYGL');
+
+    expect(bootstrap).toMatchObject({
+      broadcastId: '1MJgNNyRmEYGL',
+      mediaKey: 'media-key',
+      chatToken: 'chat-token',
+      endpoint: 'https://chat.pscp.tv',
+      accessToken: 'access-token',
+      title: 'Live test',
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      'https://api.x.com/1.1/guest/activate.json',
+      'https://x.com/i/api/1.1/broadcasts/show.json?ids=1MJgNNyRmEYGL',
+      'https://x.com/i/api/1.1/live_video_stream/status/media-key?client=web&use_syndication_guest_id=false&cookie_set_host=x.com',
+      'https://proxsee-cf.pscp.tv/api/v2/accessChatPublic',
+    ]);
+    fetchMock.mockRestore();
   });
 });

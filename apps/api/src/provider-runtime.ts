@@ -1,5 +1,5 @@
 import { MessageEventBus, FeedManager, MessageQueue, MessageRouter, type Platform, type ProviderRuntime } from '../../../packages/pipeline/src/index.js';
-import { KickPusherChatProvider, TwitchEventSubChatProvider, type TwitchOAuthConfig } from '../../../packages/providers/src/index.js';
+import { KickPusherChatProvider, TwitchEventSubChatProvider, XBroadcastChatProvider, type TwitchOAuthConfig } from '../../../packages/providers/src/index.js';
 
 export interface ProviderStatus {
   sessionId: string;
@@ -28,9 +28,18 @@ export interface StartTwitchProviderInput {
   externalUsername: string;
 }
 
+export interface StartXProviderInput {
+  sessionId: string;
+  ownerId: string;
+  ownerName: string;
+  broadcastId: string;
+  broadcastUrl: string;
+}
+
 export interface ProviderRuntimeController {
   startKick(input: StartKickProviderInput): Promise<ProviderStatus>;
   startTwitch(input: StartTwitchProviderInput): Promise<ProviderStatus>;
+  startX(input: StartXProviderInput): Promise<ProviderStatus>;
   stop(input: { sessionId: string; platform: Platform }): Promise<ProviderStatus>;
   status(sessionId: string): ProviderStatus[];
   shutdown?(): Promise<void>;
@@ -77,6 +86,16 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
       ownerName: input.ownerName,
     });
     return this.start(input.sessionId, 'twitch', input.ownerName, provider);
+  }
+
+  async startX(input: StartXProviderInput): Promise<ProviderStatus> {
+    const provider = new XBroadcastChatProvider({
+      broadcastUrl: input.broadcastUrl,
+      sessionId: input.sessionId,
+      ownerId: input.ownerId,
+      ownerName: input.ownerName,
+    });
+    return this.start(input.sessionId, 'x', input.ownerName, provider);
   }
 
   async stop(input: { sessionId: string; platform: Platform }): Promise<ProviderStatus> {

@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { createClient } from 'redis';
 import { z } from 'zod';
 import { migrate } from '../../../packages/db/src/index.js';
-import { buildTwitchAuthorizationUrl, exchangeTwitchCode, getTwitchUser, resolveKickChannel } from '../../../packages/providers/src/index.js';
+import { buildTwitchAuthorizationUrl, exchangeTwitchCode, extractXBroadcastId, getTwitchUser, resolveKickChannel } from '../../../packages/providers/src/index.js';
 import { writeAuditLog } from './audit.js';
 import { requireSessionAccess, requireSessionManager } from './permissions.js';
 import { LiveProviderRuntimeController } from './provider-runtime.js';
@@ -373,6 +373,31 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     }
   });
 
+  app.post('/api/v1/connections/x/resolve', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const body = z.object({ broadcastUrl: z.string().min(1) }).parse(request.body);
+    let broadcastId: string;
+    try {
+      broadcastId = extractXBroadcastId(body.broadcastUrl);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : 'Invalid X broadcast URL' });
+    }
+    const canonicalUrl = `https://x.com/i/broadcasts/${broadcastId}`;
+    await context.pool.query(
+      `INSERT INTO connections(user_id, platform, external_account_id, external_username, status, metadata)
+       VALUES ($1, 'x', $2, $2, 'connected', $3::jsonb)
+       ON CONFLICT (user_id, platform)
+       DO UPDATE SET external_account_id = EXCLUDED.external_account_id,
+                     external_username = EXCLUDED.external_username,
+                     status = 'connected',
+                     metadata = EXCLUDED.metadata,
+                     updated_at = now()`,
+      [user.id, broadcastId, JSON.stringify({ broadcastId, broadcastUrl: canonicalUrl })],
+    );
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'connection.x.resolved', entityType: 'connection', requestId: request.id, metadata: { broadcastId } });
+    return { connection: { platform: 'x', externalAccountId: broadcastId, externalUsername: broadcastId, status: 'connected' } };
+  });
+
   const providerSessionParams = z.object({ sessionId: z.string().uuid() });
 
   async function creatorLabelFor(sessionId: string, userId: string): Promise<string> {
@@ -444,6 +469,32 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
       externalUsername: row.external_username ?? row.external_account_id,
     });
     await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'provider.twitch.started', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
+    return { provider };
+  });
+
+  app.post('/api/v1/shared-sessions/:sessionId/providers/x/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const params = providerSessionParams.parse(request.params);
+    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+
+    const connection = await context.pool.query<{ external_account_id: string | null; metadata: Record<string, unknown> }>(
+      `SELECT external_account_id, metadata FROM connections
+       WHERE user_id = $1 AND platform = 'x' AND status = 'connected'`,
+      [user.id],
+    );
+    const row = connection.rows[0];
+    const broadcastUrl = typeof row?.metadata?.broadcastUrl === 'string' ? row.metadata.broadcastUrl : null;
+    const broadcastId = typeof row?.metadata?.broadcastId === 'string' ? row.metadata.broadcastId : row?.external_account_id;
+    if (!row || !broadcastId || !broadcastUrl) return reply.code(409).send({ error: 'X broadcast link is not configured for this user' });
+
+    const provider = await providerRuntime.startX({
+      sessionId: params.sessionId,
+      ownerId: user.id,
+      ownerName: await creatorLabelFor(params.sessionId, user.id),
+      broadcastId,
+      broadcastUrl,
+    });
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'provider.x.started', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status, broadcastId } });
     return { provider };
   });
 

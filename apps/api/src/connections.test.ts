@@ -80,4 +80,40 @@ describe('provider connection routes', () => {
     expect(response.statusCode).toBe(502);
     expect(response.json().error).toContain('Kick channel lookup failed: 403');
   });
+
+  it('stores an X broadcast link supplied by the authenticated user', async () => {
+    const user = await registerUser(app, 'x-resolve');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/connections/x/resolve',
+      headers: { authorization: `Bearer ${user.token}` },
+      payload: { broadcastUrl: 'https://x.com/i/broadcasts/1MJgNNyRmEYGL' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().connection).toMatchObject({
+      platform: 'x',
+      externalAccountId: '1MJgNNyRmEYGL',
+      externalUsername: '1MJgNNyRmEYGL',
+      status: 'connected',
+    });
+
+    const stored = await pool.query('SELECT metadata FROM connections WHERE user_id = $1 AND platform = $2', [user.user.id, 'x']);
+    expect(stored.rows[0].metadata).toMatchObject({ broadcastId: '1MJgNNyRmEYGL', broadcastUrl: 'https://x.com/i/broadcasts/1MJgNNyRmEYGL' });
+  });
+
+  it('rejects invalid X broadcast links instead of accepting arbitrary URLs', async () => {
+    const user = await registerUser(app, 'x-invalid');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/connections/x/resolve',
+      headers: { authorization: `Bearer ${user.token}` },
+      payload: { broadcastUrl: 'https://x.com/not-a-broadcast' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('Could not extract broadcast id');
+  });
 });
