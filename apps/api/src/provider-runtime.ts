@@ -1,4 +1,4 @@
-import { MessageEventBus, FeedManager, MessageQueue, MessageRouter, type Platform, type ProviderRuntime } from '../../../packages/pipeline/src/index.js';
+import { MessageEventBus, FeedManager, MessageQueue, MessageRouter, type Platform, type ProviderRuntime, type UnifiedMessage } from '../../../packages/pipeline/src/index.js';
 import { KickPusherChatProvider, TwitchEventSubChatProvider, XBroadcastChatProvider, type TwitchOAuthConfig } from '../../../packages/providers/src/index.js';
 
 export interface ProviderStatus {
@@ -42,6 +42,7 @@ export interface ProviderRuntimeController {
   startX(input: StartXProviderInput): Promise<ProviderStatus>;
   stop(input: { sessionId: string; platform: Platform }): Promise<ProviderStatus>;
   status(sessionId: string): ProviderStatus[];
+  subscribeToSession(sessionId: string, callback: (message: UnifiedMessage) => void): () => void;
   shutdown?(): Promise<void>;
 }
 
@@ -113,6 +114,10 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
       .map((entry) => entry.status)
       .filter((status) => status.sessionId === sessionId)
       .map((status) => ({ ...status }));
+  }
+
+  subscribeToSession(sessionId: string, callback: (message: UnifiedMessage) => void): () => void {
+    return this.bus.onSessionMessage(sessionId, callback);
   }
 
   async shutdown(): Promise<void> {

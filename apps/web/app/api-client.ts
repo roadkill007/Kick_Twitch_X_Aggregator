@@ -24,6 +24,14 @@ export function getApiBaseUrl(): string {
 
 export const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 
+export function createOverlayWebSocketUrl(apiBaseUrl: string, sessionId: string, token: string): string {
+  const url = new URL('/api/v1/overlay/ws', normalizeApiBaseUrl(apiBaseUrl));
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('sessionId', sessionId);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
 export function buildAuthHeaders(token: string): Record<string, string> {
   const trimmed = token.trim();
   return trimmed ? { authorization: `Bearer ${trimmed}` } : {};

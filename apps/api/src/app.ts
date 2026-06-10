@@ -410,6 +410,32 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     return result.rows[0]?.display_label ?? 'Creator';
   }
 
+  async function validateOverlayToken(sessionId: string, token: string | null): Promise<boolean> {
+    if (!token) return false;
+    const result = await context.pool.query(
+      `SELECT id FROM settings
+       WHERE shared_session_id = $1 AND key = 'overlay:token' AND value->>'tokenHash' = $2`,
+      [sessionId, hashToken(token)],
+    );
+    return Boolean(result.rowCount);
+  }
+
+  app.post('/api/v1/shared-sessions/:sessionId/overlay-token', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
+    const user = currentUser(request);
+    const params = providerSessionParams.parse(request.params);
+    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    const token = createOpaqueToken();
+    await context.pool.query(
+      `INSERT INTO settings(shared_session_id, key, value, version) VALUES ($1, 'overlay:token', $2::jsonb, 1)
+       ON CONFLICT (shared_session_id, key) WHERE shared_session_id IS NOT NULL
+       DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [params.sessionId, JSON.stringify({ tokenHash: hashToken(token), createdAt: new Date().toISOString(), createdByUserId: user.id })],
+    );
+    const overlayUrl = `${context.appPublicUrl.replace(/\/$/, '')}/overlay/${params.sessionId}?token=${encodeURIComponent(token)}`;
+    await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'overlay.token.created', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id });
+    return { token, overlayUrl };
+  });
+
   app.get('/api/v1/shared-sessions/:sessionId/providers', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
     const user = currentUser(request);
     const params = providerSessionParams.parse(request.params);
@@ -505,6 +531,21 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     const provider = await providerRuntime.stop({ sessionId: params.sessionId, platform: params.platform });
     await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: `provider.${params.platform}.stopped`, entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
     return { provider };
+  });
+
+  app.get('/api/v1/overlay/ws', { websocket: true }, async (socket, request) => {
+    const url = new URL(request.url, 'http://localhost');
+    const sessionId = url.searchParams.get('sessionId');
+    const token = url.searchParams.get('token');
+    if (!sessionId || !z.string().uuid().safeParse(sessionId).success || !(await validateOverlayToken(sessionId, token))) {
+      socket.close(1008, 'Unauthorized');
+      return;
+    }
+    socket.send(JSON.stringify({ type: 'subscribed', sessionId }));
+    const unsubscribe = providerRuntime.subscribeToSession(sessionId, (message) => {
+      socket.send(JSON.stringify({ type: 'chat_message', message }));
+    });
+    socket.on('close', unsubscribe);
   });
 
   app.get('/api/v1/ws', { websocket: true }, (socket, request) => {

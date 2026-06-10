@@ -26,6 +26,7 @@ export function DashboardClient() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [sessionForm, setSessionForm] = useState({ name: '', creatorLabel: '', description: '' });
   const [providerForm, setProviderForm] = useState({ kickUsername: '', xBroadcastUrl: '' });
+  const [overlayUrl, setOverlayUrl] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
@@ -137,6 +138,15 @@ export function DashboardClient() {
       await apiRequest(`/api/v1/shared-sessions/${selectedSessionId}/providers/${platform}/stop`, { token, method: 'POST' });
       await refreshWorkspace(token, selectedSessionId);
       setMessage(`Stopped ${platform.toUpperCase()}`);
+    });
+  }
+
+  async function createOverlayToken() {
+    if (!selectedSessionId) return;
+    await run(async () => {
+      const data = await apiRequest<{ token: string; overlayUrl: string }>(`/api/v1/shared-sessions/${selectedSessionId}/overlay-token`, { token, method: 'POST' });
+      setOverlayUrl(data.overlayUrl);
+      setMessage('Created OBS/Streamlabs browser-source overlay URL. Keep it private.');
     });
   }
 
@@ -291,6 +301,18 @@ export function DashboardClient() {
               ))}
               {!providers.length ? <p>No provider listeners running for this session.</p> : null}
             </div>
+          </section>
+
+          <section className="card">
+            <h2>OBS / Streamlabs browser-source overlay</h2>
+            <p>Create a private browser-source URL for the selected Shared Chat Session. Add it as a browser source in OBS or Streamlabs.</p>
+            <button disabled={!selectedSessionId || busy} onClick={() => void createOverlayToken()}>Create overlay URL</button>
+            {overlayUrl ? (
+              <div className="overlay-url-box">
+                <strong>Private overlay URL</strong>
+                <input readOnly value={overlayUrl} onFocus={(event) => event.currentTarget.select()} />
+              </div>
+            ) : null}
           </section>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAuthHeaders, normalizeApiBaseUrl, resolveApiBaseUrl } from './api-client';
+import { buildAuthHeaders, createOverlayWebSocketUrl, normalizeApiBaseUrl, resolveApiBaseUrl } from './api-client';
 
 describe('Level 4 web API client helpers', () => {
   it('normalizes API base URLs without trailing slashes', () => {
@@ -15,6 +15,15 @@ describe('Level 4 web API client helpers', () => {
   it('builds bearer headers only when a token exists', () => {
     expect(buildAuthHeaders('abc')).toEqual({ authorization: 'Bearer abc' });
     expect(buildAuthHeaders('')).toEqual({});
+  });
+
+  it('creates OBS overlay WebSocket URLs from API base URLs', () => {
+    expect(createOverlayWebSocketUrl('https://api.example.com', 'session-id', 'token value')).toBe(
+      'wss://api.example.com/api/v1/overlay/ws?sessionId=session-id&token=token+value',
+    );
+    expect(createOverlayWebSocketUrl('http://localhost:3001', 'session-id', 'token')).toBe(
+      'ws://localhost:3001/api/v1/overlay/ws?sessionId=session-id&token=token',
+    );
   });
 
 });
