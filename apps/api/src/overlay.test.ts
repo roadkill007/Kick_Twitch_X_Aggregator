@@ -32,7 +32,7 @@ describe('OBS browser-source overlay access', () => {
     const tokenResponse = await app.inject({ method: 'POST', url: `/api/v1/shared-sessions/${sessionId}/overlay-token`, headers: { authorization: `Bearer ${owner.token}` } });
     expect(tokenResponse.statusCode).toBe(200);
     expect(tokenResponse.json().token).toEqual(expect.any(String));
-    expect(tokenResponse.json().overlayUrl).toContain(`/overlay/${sessionId}?token=`);
+    expect(tokenResponse.json().overlayUrl).toMatch(new RegExp(`^https://web\\.example\\.test/overlay/${sessionId}\\?token=`));
 
     const forbidden = await app.inject({ method: 'POST', url: `/api/v1/shared-sessions/${sessionId}/overlay-token`, headers: { authorization: `Bearer ${outsider.token}` } });
     expect(forbidden.statusCode).toBe(403);

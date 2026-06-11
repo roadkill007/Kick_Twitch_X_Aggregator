@@ -437,7 +437,8 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
        DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
       [params.sessionId, JSON.stringify({ tokenHash: hashToken(token), createdAt: new Date().toISOString(), createdByUserId: user.id })],
     );
-    const overlayUrl = `${context.appPublicUrl.replace(/\/$/, '')}/overlay/${params.sessionId}?token=${encodeURIComponent(token)}`;
+    const overlayBaseUrl = context.webPublicUrl ?? context.appPublicUrl;
+    const overlayUrl = `${overlayBaseUrl.replace(/\/$/, '')}/overlay/${params.sessionId}?token=${encodeURIComponent(token)}`;
     await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: 'overlay.token.created', entityType: 'shared_session', entityId: params.sessionId, requestId: request.id });
     return { token, overlayUrl };
   });
