@@ -7,11 +7,13 @@ type User = { id: string; email: string };
 type SharedSession = { id: string; name: string; slug: string; description?: string; is_active?: boolean };
 type Connection = { platform: 'twitch' | 'kick' | 'x'; external_username?: string; external_account_id?: string; status: string };
 type ProviderStatus = { sessionId: string; platform: 'twitch' | 'kick' | 'x'; status: string; ownerName?: string; error?: string };
+type Collaborator = { id: string; user_id?: string; invited_email?: string; display_label: string; role: 'owner' | 'admin' | 'member'; status: 'active' | 'invited' | 'declined' };
 
 type AuthResponse = { token: string; user: User };
 type SessionListResponse = { sharedSessions: SharedSession[] };
 type ConnectionListResponse = { connections: Connection[] };
 type ProviderListResponse = { providers: ProviderStatus[] };
+type CollaboratorListResponse = { collaborators: Collaborator[] };
 
 const initialAuth = { email: '', password: '', displayName: '', handle: '' };
 
@@ -24,8 +26,11 @@ export function DashboardClient() {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [sessionForm, setSessionForm] = useState({ name: '', creatorLabel: '', description: '' });
   const [providerForm, setProviderForm] = useState({ kickUsername: '', xBroadcastUrl: '' });
+  const [inviteForm, setInviteForm] = useState({ email: '', displayLabel: '', role: 'member' as 'admin' | 'member' });
+  const [inviteUrl, setInviteUrl] = useState('');
   const [overlayUrl, setOverlayUrl] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,8 +64,12 @@ export function DashboardClient() {
     const nextSessionId = sessionId || sessionData.sharedSessions[0]?.id || '';
     setSelectedSessionId(nextSessionId);
     if (nextSessionId) {
-      const providerData = await apiRequest<ProviderListResponse>(`/api/v1/shared-sessions/${nextSessionId}/providers`, { token: activeToken });
+      const [providerData, collaboratorData] = await Promise.all([
+        apiRequest<ProviderListResponse>(`/api/v1/shared-sessions/${nextSessionId}/providers`, { token: activeToken }),
+        apiRequest<CollaboratorListResponse>(`/api/v1/shared-sessions/${nextSessionId}/collaborators`, { token: activeToken }),
+      ]);
       setProviders(providerData.providers);
+      setCollaborators(collaboratorData.collaborators);
     }
   }
 
@@ -141,6 +150,22 @@ export function DashboardClient() {
     });
   }
 
+  async function inviteCollaborator(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedSessionId) return;
+    await run(async () => {
+      const data = await apiRequest<{ invitation: Collaborator; token: string }>(`/api/v1/shared-sessions/${selectedSessionId}/invitations`, {
+        token,
+        body: { email: inviteForm.email, displayLabel: inviteForm.displayLabel, role: inviteForm.role },
+      });
+      const url = `${window.location.origin}/invite/${encodeURIComponent(data.token)}`;
+      setInviteUrl(url);
+      setInviteForm({ email: '', displayLabel: '', role: 'member' });
+      await refreshWorkspace(token, selectedSessionId);
+      setMessage(`Created invite for ${data.invitation.invited_email}. Send them the private invite link.`);
+    });
+  }
+
   async function createOverlayToken() {
     if (!selectedSessionId) return;
     await run(async () => {
@@ -170,6 +195,8 @@ export function DashboardClient() {
     setSessions([]);
     setConnections([]);
     setProviders([]);
+    setCollaborators([]);
+    setInviteUrl('');
     setSelectedSessionId('');
   }
 
@@ -241,6 +268,35 @@ export function DashboardClient() {
                 </button>
               ))}
               {!sessions.length ? <p>No sessions yet.</p> : null}
+            </div>
+          </section>
+
+
+          <section className="card">
+            <h2>Invite collaborators</h2>
+            <p>Invite another creator into the selected Shared Chat Session. After they accept, they can connect their own Twitch, Kick, and X accounts to the same session.</p>
+            <form onSubmit={inviteCollaborator} className="form-grid">
+              <label>Email<input type="email" required value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} /></label>
+              <label>Creator label<input required placeholder="Guest B, Co-host…" value={inviteForm.displayLabel} onChange={(e) => setInviteForm({ ...inviteForm, displayLabel: e.target.value })} /></label>
+              <label>Role<select value={inviteForm.role} onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value as 'admin' | 'member' })}><option value="member">Member</option><option value="admin">Admin</option></select></label>
+              <button disabled={!selectedSessionId || busy}>Create invite link</button>
+            </form>
+            {inviteUrl ? (
+              <div className="overlay-url-box">
+                <strong>Private invite link</strong>
+                <input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} />
+              </div>
+            ) : null}
+            <div className="provider-list">
+              {collaborators.map((collaborator) => (
+                <div key={collaborator.id} className="provider-row">
+                  <strong>{collaborator.display_label}</strong>
+                  <span>{collaborator.role}</span>
+                  <span>{collaborator.status}</span>
+                  <span>{collaborator.invited_email ?? collaborator.user_id ?? 'creator'}</span>
+                </div>
+              ))}
+              {!collaborators.length ? <p>No collaborators loaded for this session.</p> : null}
             </div>
           </section>
 
@@ -319,3 +375,4 @@ export function DashboardClient() {
     </main>
   );
 }
+
