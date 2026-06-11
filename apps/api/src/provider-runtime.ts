@@ -5,6 +5,7 @@ export interface ProviderStatus {
   sessionId: string;
   platform: Platform;
   status: 'running' | 'stopped' | 'failed';
+  ownerId?: string;
   ownerName?: string;
   error?: string;
 }
@@ -40,7 +41,7 @@ export interface ProviderRuntimeController {
   startKick(input: StartKickProviderInput): Promise<ProviderStatus>;
   startTwitch(input: StartTwitchProviderInput): Promise<ProviderStatus>;
   startX(input: StartXProviderInput): Promise<ProviderStatus>;
-  stop(input: { sessionId: string; platform: Platform }): Promise<ProviderStatus>;
+  stop(input: { sessionId: string; platform: Platform; ownerId: string }): Promise<ProviderStatus>;
   status(sessionId: string): ProviderStatus[];
   subscribeToSession(sessionId: string, callback: (message: UnifiedMessage) => void): () => void;
   shutdown?(): Promise<void>;
@@ -73,7 +74,7 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
       ownerId: input.ownerId,
       ownerName: input.ownerName,
     });
-    return this.start(input.sessionId, 'kick', input.ownerName, provider);
+    return this.start(input.sessionId, 'kick', input.ownerId, input.ownerName, provider);
   }
 
   async startTwitch(input: StartTwitchProviderInput): Promise<ProviderStatus> {
@@ -86,7 +87,7 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
       ownerId: input.ownerId,
       ownerName: input.ownerName,
     });
-    return this.start(input.sessionId, 'twitch', input.ownerName, provider);
+    return this.start(input.sessionId, 'twitch', input.ownerId, input.ownerName, provider);
   }
 
   async startX(input: StartXProviderInput): Promise<ProviderStatus> {
@@ -96,13 +97,13 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
       ownerId: input.ownerId,
       ownerName: input.ownerName,
     });
-    return this.start(input.sessionId, 'x', input.ownerName, provider);
+    return this.start(input.sessionId, 'x', input.ownerId, input.ownerName, provider);
   }
 
-  async stop(input: { sessionId: string; platform: Platform }): Promise<ProviderStatus> {
-    const key = this.key(input.sessionId, input.platform);
+  async stop(input: { sessionId: string; platform: Platform; ownerId: string }): Promise<ProviderStatus> {
+    const key = this.key(input.sessionId, input.platform, input.ownerId);
     const active = this.active.get(key);
-    if (!active) return { sessionId: input.sessionId, platform: input.platform, status: 'stopped' };
+    if (!active) return { sessionId: input.sessionId, platform: input.platform, ownerId: input.ownerId, status: 'stopped' };
     await active.provider.stop();
     const status = { ...active.status, status: 'stopped' as const };
     this.active.delete(key);
@@ -126,11 +127,11 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
     this.active.clear();
   }
 
-  private async start(sessionId: string, platform: Platform, ownerName: string, provider: ProviderRuntime): Promise<ProviderStatus> {
-    const key = this.key(sessionId, platform);
+  private async start(sessionId: string, platform: Platform, ownerId: string, ownerName: string, provider: ProviderRuntime): Promise<ProviderStatus> {
+    const key = this.key(sessionId, platform, ownerId);
     await this.active.get(key)?.provider.stop();
     provider.onMessage((message) => this.router.accept(message));
-    const status: ProviderStatus = { sessionId, platform, status: 'running', ownerName };
+    const status: ProviderStatus = { sessionId, platform, status: 'running', ownerId, ownerName };
     this.active.set(key, { provider, status });
     try {
       await provider.start();
@@ -140,6 +141,7 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
         sessionId,
         platform,
         status: 'failed',
+        ownerId,
         ownerName,
         error: error instanceof Error ? error.message : String(error),
       };
@@ -148,11 +150,12 @@ export class LiveProviderRuntimeController implements ProviderRuntimeController 
     }
   }
 
-  private key(sessionId: string, platform: Platform): string {
-    return `${sessionId}:${platform}`;
+  private key(sessionId: string, platform: Platform, ownerId: string): string {
+    return `${sessionId}:${platform}:${ownerId}`;
   }
 }
 
 export function createTwitchConfigInput(config: TwitchOAuthConfig): Pick<StartTwitchProviderInput, 'clientId'> {
   return { clientId: config.clientId };
 }
+

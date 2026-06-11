@@ -427,7 +427,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   app.post('/api/v1/shared-sessions/:sessionId/overlay-token', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
     const user = currentUser(request);
     const params = providerSessionParams.parse(request.params);
-    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
     const token = createOpaqueToken();
     await context.pool.query(
       `INSERT INTO settings(shared_session_id, key, value, version) VALUES ($1, 'overlay:token', $2::jsonb, 1)
@@ -450,7 +450,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   app.post('/api/v1/shared-sessions/:sessionId/providers/kick/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
     const user = currentUser(request);
     const params = providerSessionParams.parse(request.params);
-    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
 
     const connection = await context.pool.query<{ external_account_id: string | null; external_username: string | null; metadata: Record<string, unknown> }>(
       `SELECT external_account_id, external_username, metadata FROM connections
@@ -477,7 +477,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     if (!context.twitch) return reply.code(503).send({ error: 'Twitch is not configured' });
     const user = currentUser(request);
     const params = providerSessionParams.parse(request.params);
-    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
 
     const connection = await context.pool.query<{ external_account_id: string | null; external_username: string | null; metadata: Record<string, unknown> }>(
       `SELECT external_account_id, external_username, metadata FROM connections
@@ -505,7 +505,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   app.post('/api/v1/shared-sessions/:sessionId/providers/x/start', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
     const user = currentUser(request);
     const params = providerSessionParams.parse(request.params);
-    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
 
     const connection = await context.pool.query<{ external_account_id: string | null; metadata: Record<string, unknown> }>(
       `SELECT external_account_id, metadata FROM connections
@@ -531,8 +531,8 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
   app.post('/api/v1/shared-sessions/:sessionId/providers/:platform/stop', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request, reply) => {
     const user = currentUser(request);
     const params = z.object({ sessionId: z.string().uuid(), platform: z.enum(['twitch', 'kick', 'x']) }).parse(request.params);
-    try { await requireSessionManager(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
-    const provider = await providerRuntime.stop({ sessionId: params.sessionId, platform: params.platform });
+    try { await requireSessionAccess(context.pool, params.sessionId, user.id); } catch { return reply.code(403).send({ error: 'Forbidden' }); }
+    const provider = await providerRuntime.stop({ sessionId: params.sessionId, platform: params.platform, ownerId: user.id });
     await writeAuditLog({ pool: context.pool, actorUserId: user.id, action: `provider.${params.platform}.stopped`, entityType: 'shared_session', entityId: params.sessionId, requestId: request.id, metadata: { status: provider.status } });
     return { provider };
   });
@@ -579,3 +579,4 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
 
   return app;
 }
+

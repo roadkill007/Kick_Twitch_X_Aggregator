@@ -6,7 +6,7 @@ import { API_BASE_URL, apiRequest, getApiBaseUrl } from './api-client';
 type User = { id: string; email: string };
 type SharedSession = { id: string; name: string; slug: string; description?: string; is_active?: boolean };
 type Connection = { platform: 'twitch' | 'kick' | 'x'; external_username?: string; external_account_id?: string; status: string };
-type ProviderStatus = { sessionId: string; platform: 'twitch' | 'kick' | 'x'; status: string; ownerName?: string; error?: string };
+type ProviderStatus = { sessionId: string; platform: 'twitch' | 'kick' | 'x'; status: string; ownerId?: string; ownerName?: string; error?: string };
 type Collaborator = { id: string; user_id?: string; invited_email?: string; display_label: string; role: 'owner' | 'admin' | 'member'; status: 'active' | 'invited' | 'declined' };
 
 type AuthResponse = { token: string; user: User };
@@ -348,7 +348,7 @@ export function DashboardClient() {
             <h2>Active provider status</h2>
             <div className="provider-list">
               {providers.map((provider) => (
-                <div key={`${provider.platform}-${provider.sessionId}`} className="provider-row">
+                <div key={`${provider.platform}-${provider.sessionId}-${provider.ownerId ?? provider.ownerName ?? 'unknown'}`} className="provider-row">
                   <strong>{provider.platform.toUpperCase()}</strong>
                   <span>{provider.status}</span>
                   <span>{provider.ownerName ?? 'Creator'}</span>
