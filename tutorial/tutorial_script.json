@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Stream Chat Aggregator Tutorial",
+    "subtitle": "How creators combine Twitch, Kick, and X livestream chats into one OBS overlay",
+    "bullets": ["Website: https://web-iota-eight-87.vercel.app", "Goal: one shared session, multiple creators, one overlay", "Use this as a Loom-style submission walkthrough"],
+    "narration": "Hi, this is a quick walkthrough of the Stream Chat Aggregator. It lets streamers combine Twitch, Kick, and X live chats into one shared session and display everything in a single OBS or Streamlabs browser overlay."
+  },
+  {
+    "title": "1. Register or Login",
+    "subtitle": "Every creator gets their own account",
+    "bullets": ["Open the Vercel website", "Create an account or log in", "Each user owns their own platform connections", "No one has to share passwords or tokens"],
+    "narration": "First, open the website and register or log in. Each creator has their own account. That means your Twitch, Kick, and X connections belong to your account only, and collaborators connect their own accounts separately."
+  },
+  {
+    "title": "2. Create a Shared Chat Session",
+    "subtitle": "The session is the shared room for all chats",
+    "bullets": ["Create a session name", "Set your creator label, like Penpal", "Select the session in the dashboard", "The session becomes the center of the combined chat"],
+    "narration": "Next, create a Shared Chat Session. Think of this as the shared room. Give it a name and set your creator label. The overlay listens to this session, not just to one platform account."
+  },
+  {
+    "title": "3. Connect Twitch, Kick, and X",
+    "subtitle": "Each platform is connected by the creator who owns it",
+    "bullets": ["Twitch: open OAuth and authorize", "Kick: enter the Kick channel name", "X: paste the X broadcast link", "The dashboard auto-refreshes and locks in the connection"],
+    "narration": "Now connect the platforms. Twitch uses the OAuth authorization flow. Kick uses the channel name. X uses the public broadcast URL. After connecting, the dashboard refreshes and locks in the saved connection so you can start listeners without refreshing manually."
+  },
+  {
+    "title": "4. Invite Another Creator",
+    "subtitle": "Collaborators join the same shared session",
+    "bullets": ["Use Invite collaborators", "Enter their email and creator label", "Send them the private invite link", "They register or log in and click Accept invite"],
+    "narration": "To bring another creator into the same session, use the Invite collaborators section. Enter their email and a display label, then send them the private invite link. They register or log in, accept the invite, and the same session appears in their dashboard."
+  },
+  {
+    "title": "5. Start Chat Listeners",
+    "subtitle": "Multiple creators can run the same platform in one session",
+    "bullets": ["Start Twitch, Kick, or X for the selected session", "Listeners are tracked by session, platform, and user", "Penpal Twitch and Guest Twitch can both run", "Errors now show clear messages instead of Bad Request"],
+    "narration": "After connections are saved, start the provider listeners. The system tracks listeners by session, platform, and user. So if two creators both have Twitch, both Twitch listeners can run in the same shared session without replacing each other."
+  },
+  {
+    "title": "6. Create the OBS Overlay",
+    "subtitle": "One browser source shows all chats",
+    "bullets": ["Click Create overlay URL", "Copy the private Vercel overlay link", "Add it to OBS or Streamlabs as a Browser Source", "The overlay receives all active chats in the shared session"],
+    "narration": "Finally, create the OBS or Streamlabs overlay URL. Copy the private Vercel overlay link and add it as a browser source. That one overlay receives messages from all active collaborators and all active platforms in the shared session."
+  },
+  {
+    "title": "End-to-End Example",
+    "subtitle": "What the final overlay combines",
+    "bullets": ["Penpal Twitch + Penpal Kick + Penpal X", "Guest Twitch + Guest Kick + Guest X", "All normalized into one feed", "Ready to submit as the working tutorial demo"],
+    "narration": "In the final result, Penpal can have Twitch, Kick, and X connected, while a guest creator also has Twitch, Kick, and X connected. Every message is normalized into one feed and shown in one overlay. That is the full collaboration workflow."
+  }
+]
