@@ -14,10 +14,12 @@ afterEach(async () => {
 });
 
 describe('infrastructure endpoints', () => {
-  it('serves liveness, readiness, and metrics', async () => {
+  it('serves liveness, readiness, metrics, and security headers', async () => {
     const live = await app.inject({ method: 'GET', url: '/health/live' });
     expect(live.statusCode).toBe(200);
     expect(live.json().status).toBe('ok');
+    expect(live.headers['x-content-type-options']).toBe('nosniff');
+    expect(live.headers['x-frame-options']).toBe('SAMEORIGIN');
 
     const ready = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(ready.statusCode).toBe(200);

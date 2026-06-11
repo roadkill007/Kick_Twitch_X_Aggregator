@@ -1,5 +1,7 @@
 import * as crypto from 'node:crypto';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createClient } from 'redis';
@@ -48,6 +50,8 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
 
   const app = Fastify({ logger: false, genReqId: () => crypto.randomUUID() });
   const providerRuntime = context.providerRuntime ?? new LiveProviderRuntimeController();
+  await app.register(helmet, { contentSecurityPolicy: false, frameguard: { action: 'sameorigin' } });
+  await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   await app.register(cors, { origin: true });
   await app.register(websocket);
 

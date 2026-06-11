@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.2.2",
     "@fastify/websocket": "^11.0.1",
     "@sca/db": "workspace:*",
     "bcryptjs": "^2.4.3",
