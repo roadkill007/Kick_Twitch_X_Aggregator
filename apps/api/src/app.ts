@@ -198,7 +198,7 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     const result = await context.pool.query(
       `SELECT ss.id, ss.name, ss.slug, ss.description, c.role
        FROM shared_sessions ss JOIN collaborators c ON c.shared_session_id = ss.id
-       WHERE c.user_id = $1 AND c.status = 'active' ORDER BY ss.created_at DESC`,
+       WHERE c.user_id = $1 AND c.status = 'active' AND ss.is_active = true ORDER BY ss.created_at DESC`,
       [user.id],
     );
     return { sharedSessions: result.rows };
@@ -340,8 +340,10 @@ export async function createApp(context: AppContext): Promise<FastifyInstance> {
     );
     await context.pool.query('DELETE FROM settings WHERE key = $1', [`oauth:twitch:${query.state}`]);
     await writeAuditLog({ pool: context.pool, actorUserId: stateRow.user_id, action: 'connection.twitch.connected', entityType: 'connection', requestId: request.id, metadata: { twitchUserId: twitchUser.id, twitchLogin: twitchUser.login } });
-    reply.type('text/html');
-    return '<!doctype html><title>Twitch connected</title><h1>Twitch connected</h1><p>You can close this tab and return to the app.</p>';
+    const webUrl = new URL(context.webPublicUrl ?? context.appPublicUrl);
+    webUrl.searchParams.set('connection', 'twitch');
+    webUrl.searchParams.set('status', 'connected');
+    return reply.redirect(webUrl.toString());
   });
 
   app.get('/api/v1/connections', { preHandler: (req, rep) => authGuard(context, req, rep) }, async (request) => {

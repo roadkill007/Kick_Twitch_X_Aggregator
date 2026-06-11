@@ -13,6 +13,7 @@ export interface AppContext {
   jwtSecret: string;
   redisUrl: string;
   appPublicUrl: string;
+  webPublicUrl?: string;
   twitch?: {
     clientId: string;
     clientSecret: string;

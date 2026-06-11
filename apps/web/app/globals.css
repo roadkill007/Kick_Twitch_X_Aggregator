@@ -11,6 +11,7 @@ button, input, select { font: inherit; }
 button, .button-link { background: linear-gradient(135deg, #22d3ee, #8b5cf6); color: #020617; border: 0; padding: 0.85rem 1rem; border-radius: 0.8rem; font-weight: 800; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
 button:disabled { cursor: not-allowed; opacity: 0.55; }
 button.secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+button.danger { background: #7f1d1d; color: #fee2e2; border: 1px solid #ef4444; }
 button.active { outline: 2px solid #38bdf8; }
 input, select { width: 100%; border-radius: 0.75rem; border: 1px solid #334155; background: #0f172a; color: #f8fafc; padding: 0.75rem; margin-top: 0.35rem; }
 label { color: #cbd5e1; font-size: 0.9rem; font-weight: 700; }
@@ -35,6 +36,7 @@ p { color: #94a3b8; line-height: 1.65; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: end; }
 .form-grid .wide { grid-column: 1 / -1; }
 .session-list, .provider-list { display: grid; gap: 0.75rem; }
+.danger-row { margin-top: 1rem; display: flex; justify-content: flex-end; }
 .session-button { background: #0f172a; color: #f8fafc; border: 1px solid #334155; text-align: left; display: grid; gap: 0.15rem; }
 .session-button span { color: #94a3b8; font-size: 0.85rem; }
 .platform-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }

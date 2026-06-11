@@ -56,8 +56,8 @@ describe('provider connection routes', () => {
       }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     const callback = await app.inject({ method: 'GET', url: `/api/v1/connections/twitch/callback?code=abc&state=${state}` });
-    expect(callback.statusCode).toBe(200);
-    expect(callback.body).toContain('Twitch connected');
+    expect(callback.statusCode).toBe(302);
+    expect(callback.headers.location).toBe('https://web.example.test/?connection=twitch&status=connected');
 
     const list = await app.inject({ method: 'GET', url: '/api/v1/connections', headers: { authorization: `Bearer ${user.token}` } });
     expect(list.statusCode).toBe(200);

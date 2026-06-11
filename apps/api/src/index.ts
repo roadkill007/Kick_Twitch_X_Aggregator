@@ -7,6 +7,7 @@ const jwtSecret = process.env.JWT_SECRET;
 const port = Number(process.env.API_PORT ?? 3001);
 const host = process.env.API_HOST ?? '0.0.0.0';
 const appPublicUrl = process.env.APP_PUBLIC_URL ?? `http://localhost:${port}`;
+const webPublicUrl = process.env.WEB_PUBLIC_URL ?? process.env.NEXT_PUBLIC_WEB_PUBLIC_URL ?? appPublicUrl;
 const twitchClientId = process.env.TWITCH_CLIENT_ID;
 const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
 const twitchRedirectUri = process.env.TWITCH_REDIRECT_URI ?? `${appPublicUrl}/api/v1/connections/twitch/callback`;
@@ -20,6 +21,7 @@ const appContext = {
   redisUrl,
   jwtSecret,
   appPublicUrl,
+  webPublicUrl,
   ...(twitchClientId && twitchClientSecret ? {
     twitch: {
       clientId: twitchClientId,

@@ -53,6 +53,18 @@ export function DashboardClient() {
     if (token) void refreshWorkspace(token);
   }, [token]);
 
+  useEffect(() => {
+    if (!token) return;
+    const params = new URLSearchParams(window.location.search);
+    const connection = params.get('connection');
+    const status = params.get('status');
+    if (!connection || !status) return;
+    void refreshWorkspace(token).then(() => {
+      setMessage(status === 'connected' ? `${connection.toUpperCase()} connected and locked in.` : `${connection.toUpperCase()} connection ${status}.`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    });
+  }, [token]);
+
   async function refreshWorkspace(activeToken = token, sessionId = selectedSessionId) {
     if (!activeToken) return;
     const [sessionData, connectionData] = await Promise.all([
@@ -70,6 +82,9 @@ export function DashboardClient() {
       ]);
       setProviders(providerData.providers);
       setCollaborators(collaboratorData.collaborators);
+    } else {
+      setProviders([]);
+      setCollaborators([]);
     }
   }
 
@@ -106,6 +121,22 @@ export function DashboardClient() {
     });
   }
 
+  async function deleteSelectedSession() {
+    if (!selectedSessionId || !selectedSession) return;
+    const confirmed = window.confirm(`Delete session ${selectedSession.name}? Provider listeners and overlay access for it will stop being useful.`);
+    if (!confirmed) return;
+    await run(async () => {
+      await apiRequest(`/api/v1/shared-sessions/${selectedSessionId}`, { token, method: 'DELETE' });
+      setSelectedSessionId('');
+      setProviders([]);
+      setCollaborators([]);
+      setOverlayUrl('');
+      setInviteUrl('');
+      await refreshWorkspace(token, '');
+      setMessage(`Deleted Shared Chat Session: ${selectedSession.name}`);
+    });
+  }
+
   async function connectTwitch() {
     await run(async () => {
       const data = await apiRequest<{ authorizationUrl: string; redirectUri: string }>('/api/v1/connections/twitch/start', { token });
@@ -117,18 +148,20 @@ export function DashboardClient() {
   async function connectKick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await run(async () => {
-      await apiRequest('/api/v1/connections/kick/resolve', { token, body: { username: providerForm.kickUsername } });
-      await refreshWorkspace();
-      setMessage(`Connected Kick channel ${providerForm.kickUsername}`);
+      const data = await apiRequest<{ connection: { externalUsername: string; status: string } }>('/api/v1/connections/kick/resolve', { token, body: { username: providerForm.kickUsername } });
+      setProviderForm((current) => ({ ...current, kickUsername: data.connection.externalUsername }));
+      await refreshWorkspace(token, selectedSessionId);
+      setMessage(`Connected and locked in Kick channel ${data.connection.externalUsername}`);
     });
   }
 
   async function connectX(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await run(async () => {
-      await apiRequest('/api/v1/connections/x/resolve', { token, body: { broadcastUrl: providerForm.xBroadcastUrl } });
-      await refreshWorkspace();
-      setMessage('Connected X broadcast link');
+      const data = await apiRequest<{ connection: { externalUsername: string; status: string } }>('/api/v1/connections/x/resolve', { token, body: { broadcastUrl: providerForm.xBroadcastUrl } });
+      setProviderForm((current) => ({ ...current, xBroadcastUrl: `https://x.com/i/broadcasts/${data.connection.externalUsername}` }));
+      await refreshWorkspace(token, selectedSessionId);
+      setMessage('Connected and locked in X broadcast link');
     });
   }
 
@@ -269,6 +302,11 @@ export function DashboardClient() {
               ))}
               {!sessions.length ? <p>No sessions yet.</p> : null}
             </div>
+            {selectedSession ? (
+              <div className="danger-row">
+                <button className="danger" disabled={busy} onClick={() => void deleteSelectedSession()}>Delete selected session</button>
+              </div>
+            ) : null}
           </section>
 
 
@@ -375,4 +413,5 @@ export function DashboardClient() {
     </main>
   );
 }
+
 

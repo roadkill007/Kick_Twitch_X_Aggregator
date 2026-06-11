@@ -37,15 +37,23 @@ export function buildAuthHeaders(token: string): Record<string, string> {
   return trimmed ? { authorization: `Bearer ${trimmed}` } : {};
 }
 
-export async function apiRequest<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
+export function buildApiRequestInit(options: { token?: string; method?: string; body?: unknown } = {}): RequestInit {
+  const headers: Record<string, string> = {
+    ...(options.token ? buildAuthHeaders(options.token) : {}),
+  };
   const init: RequestInit = {
     method: options.method ?? (options.body === undefined ? 'GET' : 'POST'),
-    headers: {
-      'content-type': 'application/json',
-      ...(options.token ? buildAuthHeaders(options.token) : {}),
-    },
+    headers,
   };
-  if (options.body !== undefined) init.body = JSON.stringify(options.body);
+  if (options.body !== undefined) {
+    headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(options.body);
+  }
+  return init;
+}
+
+export async function apiRequest<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
+  const init = buildApiRequestInit(options);
 
   const response = await fetch(`${getApiBaseUrl()}${path}`, init);
 

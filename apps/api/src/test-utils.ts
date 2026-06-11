@@ -7,6 +7,7 @@ export const testConfig = {
   redisUrl: process.env.REDIS_URL ?? ['redis', '://', 'localhost', ':6379'].join(''),
   jwtSecret: 'test-jwt-secret-at-least-32-characters',
   appPublicUrl: 'https://example.test',
+  webPublicUrl: 'https://web.example.test',
   twitch: {
     clientId: 'test-client-id',
     clientSecret: 'test-client-secret',

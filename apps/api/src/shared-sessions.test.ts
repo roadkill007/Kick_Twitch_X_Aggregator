@@ -48,6 +48,19 @@ describe('Shared Chat Sessions and invitations', () => {
     expect(forbidden.statusCode).toBe(403);
   });
 
+  it('hides deleted shared sessions from the active session list', async () => {
+    const owner = await registerUser(app, 'session-delete-owner');
+    const created = await app.inject({ method: 'POST', url: '/api/v1/shared-sessions', headers: { authorization: `Bearer ${owner.token}` }, payload: { name: 'Delete Me' } });
+    const sessionId = created.json().sharedSession.id;
+
+    const deleted = await app.inject({ method: 'DELETE', url: `/api/v1/shared-sessions/${sessionId}`, headers: { authorization: `Bearer ${owner.token}` } });
+    expect(deleted.statusCode).toBe(204);
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/shared-sessions', headers: { authorization: `Bearer ${owner.token}` } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().sharedSessions).toEqual([]);
+  });
+
   it('lets an owner invite a collaborator and the invited user accept', async () => {
     const owner = await registerUser(app, 'invite-owner');
     const invited = await registerUser(app, 'invite-member');
