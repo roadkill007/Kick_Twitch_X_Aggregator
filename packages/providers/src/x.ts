@@ -115,17 +115,23 @@ export async function bootstrapXBroadcast(inputUrl: string): Promise<XBroadcastB
 }
 
 export async function fetchXInitialHistory(bootstrap: XBroadcastBootstrap): Promise<XChatMessage[]> {
-  const response = await requestJson<unknown>(`${bootstrap.endpoint.replace(/\/$/, '')}/chatapi/v1/history`, {
-    method: 'POST',
-    headers: periscopeHeaders(),
-    body: JSON.stringify({
-      access_token: bootstrap.accessToken,
-      cursor: '',
-      limit: 1000,
-      since: null,
-      quick_get: true,
-    }),
-  });
+  let response: unknown;
+  try {
+    response = await requestJson<unknown>(`${bootstrap.endpoint.replace(/\/$/, '')}/chatapi/v1/history`, {
+      method: 'POST',
+      headers: periscopeHeaders(),
+      body: JSON.stringify({
+        access_token: bootstrap.accessToken,
+        cursor: '',
+        limit: 1000,
+        since: null,
+        quick_get: true,
+      }),
+    });
+  } catch (error) {
+    if (error instanceof XHttpError && (error.status === 404 || error.status === 410)) return [];
+    throw error;
+  }
   const parsed = z.object({ messages: z.array(z.object({ kind: z.number().optional(), payload: z.string().optional() }).passthrough()).default([]) }).passthrough().parse(response);
   const messages = parsed.messages
     .map((message) => parseXChatMessage(message, bootstrap.broadcastId, bootstrap.url))

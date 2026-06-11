@@ -3,7 +3,7 @@ import { ExponentialBackoff } from './backoff.js';
 import { DuplicateSuppressor } from './duplicates.js';
 import { buildTwitchAuthorizationUrl, refreshTwitchToken, TWITCH_CHAT_SCOPES } from './twitch.js';
 import { KickPusherChatProvider, parseKickChannel } from './kick.js';
-import { extractXBroadcastId, parseXChatMessage, bootstrapXBroadcast, assertXLivestreamConfigured } from './x.js';
+import { extractXBroadcastId, parseXChatMessage, bootstrapXBroadcast, assertXLivestreamConfigured, fetchXInitialHistory } from './x.js';
 
 describe('Twitch real integration helpers', () => {
   it('builds the production Twitch OAuth URL with required chat scopes', () => {
@@ -114,6 +114,24 @@ describe('X provider gate', () => {
       text: 'hello x live',
       timestampMs: 1700000000000,
     });
+  });
+
+  it('does not fail X listener startup when the optional history endpoint returns 404', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('not found', { status: 404 }));
+
+    const history = await fetchXInitialHistory({
+      broadcastId: '1MJgNNyRmEYGL',
+      url: 'https://x.com/i/broadcasts/1MJgNNyRmEYGL',
+      mediaKey: 'media-key',
+      chatToken: 'chat-token',
+      endpoint: 'https://prod-chatman-ancillary-us-west-2.pscp.tv',
+      accessToken: 'access-token',
+      readOnly: true,
+    });
+
+    expect(history).toEqual([]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://prod-chatman-ancillary-us-west-2.pscp.tv/chatapi/v1/history');
+    fetchMock.mockRestore();
   });
 
   it('bootstraps an X broadcast through the public guest-token and chat-token flow', async () => {
